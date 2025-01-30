@@ -4,6 +4,7 @@ import sys
 import time
 
 import httplib2
+from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
@@ -184,8 +185,40 @@ if __name__ == "__main__":
     if not os.path.exists(args.file):
         exit("Please specify a valid file using the --file= parameter.")
 
-    youtube = get_authenticated_service(args)
-    try:
-        initialize_upload(youtube, args)
-    except HttpError as e:
-        print("An HTTP error %d occurred:\n%s" % (e.resp.status, e.content))
+    client_secrets_file = "client_secrets.json"
+
+    # Phạm vi xác thực (để tải video lên YouTube)
+    SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
+
+    # Thiết lập và chạy quy trình xác thực OAuth2
+    flow = InstalledAppFlow.from_client_secrets_file(client_secrets_file, SCOPES)
+    credentials = flow.run_local_server()  # Lấy mã xác thực từ Google
+
+    # Kết nối API YouTube
+    youtube = build("youtube", "v3", credentials=credentials)
+
+    # Đường dẫn đến video trong Google Drive (tài khoản A)
+    video_path = args.file
+
+    # Thiết lập thông tin video
+    request_body = {
+        "snippet": {
+            "title": "Your Video Title",
+            "description": "Your Video Description",
+            "tags": ["tag1", "tag2"],
+            "categoryId": "10",  # Danh mục video (22: People & Blogs)
+        },
+        "status": {
+            "privacyStatus": "private",  # Hoặc 'private', 'unlisted'
+        },
+    }
+
+    # Tải video lên
+    media = MediaFileUpload(
+        video_path, chunksize=-1, resumable=True, mimetype="video/mp4"
+    )
+    response_upload = (
+        youtube.videos()
+        .insert(part="snippet,status", body=request_body, media_body=media)
+        .execute()
+    )
